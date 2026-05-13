@@ -25,6 +25,7 @@ FORMAT_B_SIGNATURE = "Reference Number Local Partner"
 # DataFrame after renaming; load_csv_to_db will insert NULL for them
 # automatically because Postgres will not find a matching column to fill.
 FORMAT_B_COLUMN_MAP = {
+    "Reference Number Local Partner":       "address",           # closest equivalent – adjust if you have a dedicated column
     "Farmer Agreement Signed":              "farm_agreement_signed",
     "Land Use":                             "land_use",          # Format-B-only → NULL in Format A rows (add col to table if needed)
     "Land Ownership":                       "land_tenure",       # maps to existing land-tenure concept
@@ -52,16 +53,32 @@ def detect_format(df: pd.DataFrame) -> str:
     """Return 'B' if this is the new format, 'A' for the original."""
     return "B" if FORMAT_B_SIGNATURE in df.columns else "A"
 
-def normalise_format_b(df: pd.DataFrame) -> pd.DataFrame:
+def get_prodai_columns() -> list:
+    """Return the actual column names present in the prodai table."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = %s AND table_name = 'prodai'",
+        (DB_SCHEMA,)
+    )
+    cols = [row[0] for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return cols
+
+def normalise_format_b(df: pd.DataFrame, existing_columns: list) -> pd.DataFrame:
     """
-    Rename Format B columns to match the existing prodai schema (Format A).
-    Columns that only exist in Format A will simply be absent → NULL in DB.
-    Columns that only exist in Format B are renamed to their new nullable
-    counterparts in prodai (add those columns to the table if not present).
+    Rename Format B columns to match the existing prodai schema (Format A),
+    then drop any column that doesn't exist in prodai — no DB changes needed.
     """
     df = df.copy()
     rename = {k: v for k, v in FORMAT_B_COLUMN_MAP.items() if k in df.columns}
     df = df.rename(columns=rename)
+    # Normalise column names the same way load_csv_to_db will
+    df.columns = [c.lower().replace(' ', '_') for c in df.columns]
+    # Keep only columns that exist in prodai
+    df = df[[c for c in df.columns if c in existing_columns]]
     return df
 
 # ---------------------------------------------------------------------------
@@ -112,6 +129,8 @@ def load_csv_to_db(df):
 
     df = df.copy()
     df.columns = [c.lower().replace(' ', '_') for c in df.columns]
+    # De-duplicate columns (safety net — should not occur after normalisation)
+    df = df.loc[:, ~df.columns.duplicated()]
 
     cur.execute(f"TRUNCATE {DB_SCHEMA}.prodai")
 
@@ -176,10 +195,10 @@ def main():
     st.write("Upload your Acorn CSV export to convert it to FarmTree multiplot format.")
 
     uploaded_file = st.file_uploader(
-    "Upload Acorn CSV or Excel",
-    type=["csv", "xlsx"],
-    key="acorn_csv_uploader"
-)
+        "Upload Acorn CSV",
+        type="csv",
+        key="acorn_csv_uploader"
+    )
 
     if uploaded_file:
         st.info("File uploaded — click Convert to process it.")
@@ -187,13 +206,10 @@ def main():
         if st.button("Convert", key="convert_btn"):
             with st.spinner("Loading data..."):
                 try:
-                    if uploaded_file.name.endswith('.xlsx'):
-                        df_input = pd.read_excel(uploaded_file, engine='openpyxl')
-                    else:
-                        sample = uploaded_file.read(2048).decode('utf-8')
-                        uploaded_file.seek(0)
-                        delimiter = ';' if sample.count(';') > sample.count(',') else ','
-                        df_input = pd.read_csv(uploaded_file, delimiter=delimiter, encoding='utf-8')
+                    sample = uploaded_file.read(2048).decode('utf-8')
+                    uploaded_file.seek(0)
+                    delimiter = ';' if sample.count(';') > sample.count(',') else ','
+                    df_input = pd.read_csv(uploaded_file, delimiter=delimiter, encoding='utf-8')
                     st.success(f"Loaded {len(df_input)} farmer records")
                 except Exception as e:
                     st.error(f"Failed to read CSV: {e}")
@@ -203,7 +219,8 @@ def main():
             fmt = detect_format(df_input)
             if fmt == "B":
                 st.info("Detected new format — normalising columns before import.")
-                df_input = normalise_format_b(df_input)
+                existing_cols = get_prodai_columns()
+                df_input = normalise_format_b(df_input, existing_cols)
             # ──────────────────────────────────────────────────────────────
 
             with st.spinner("Transforming data..."):
