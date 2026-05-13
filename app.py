@@ -25,7 +25,7 @@ FORMAT_B_SIGNATURE = "Reference Number Local Partner"
 # DataFrame after renaming; load_csv_to_db will insert NULL for them
 # automatically because Postgres will not find a matching column to fill.
 FORMAT_B_COLUMN_MAP = {
-    "Reference Number Local Partner":       "address",           # closest equivalent – adjust if you have a dedicated column
+    "Reference Number Local Partner": "reference_number_local_partner",
     "Farmer Agreement Signed":              "farm_agreement_signed",
     "Land Use":                             "land_use",          # Format-B-only → NULL in Format A rows (add col to table if needed)
     "Land Ownership":                       "land_tenure",       # maps to existing land-tenure concept
