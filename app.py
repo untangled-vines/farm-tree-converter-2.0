@@ -195,8 +195,8 @@ def main():
     st.write("Upload your Acorn CSV export to convert it to FarmTree multiplot format.")
 
     uploaded_file = st.file_uploader(
-        "Upload Acorn CSV",
-        type="csv",
+        "Upload Acorn CSV or Excel",
+        type=["csv", "xlsx"],
         key="acorn_csv_uploader"
     )
 
@@ -206,10 +206,13 @@ def main():
         if st.button("Convert", key="convert_btn"):
             with st.spinner("Loading data..."):
                 try:
-                    sample = uploaded_file.read(2048).decode('utf-8')
-                    uploaded_file.seek(0)
-                    delimiter = ';' if sample.count(';') > sample.count(',') else ','
-                    df_input = pd.read_csv(uploaded_file, delimiter=delimiter, encoding='utf-8')
+                    if uploaded_file.name.endswith('.xlsx'):
+                        df_input = pd.read_excel(uploaded_file, engine='openpyxl')
+                    else:
+                        sample = uploaded_file.read(2048).decode('utf-8')
+                        uploaded_file.seek(0)
+                        delimiter = ';' if sample.count(';') > sample.count(',') else ','
+                        df_input = pd.read_csv(uploaded_file, delimiter=delimiter, encoding='utf-8')
                     st.success(f"Loaded {len(df_input)} farmer records")
                 except Exception as e:
                     st.error(f"Failed to read CSV: {e}")
