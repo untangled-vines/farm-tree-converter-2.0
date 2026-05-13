@@ -177,10 +177,10 @@ def main():
     st.write("Upload your Acorn CSV export to convert it to FarmTree multiplot format.")
 
     uploaded_file = st.file_uploader(
-        "Upload Acorn CSV",
-        type="csv",
-        key="acorn_csv_uploader"
-    )
+    "Upload Acorn CSV or Excel",
+    type=["csv", "xlsx"],
+    key="acorn_csv_uploader"
+)
 
     if uploaded_file:
         st.info("File uploaded — click Convert to process it.")
