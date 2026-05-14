@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import psycopg2
+from psycopg2.extras import execute_values
 import io
 import math
 
@@ -135,18 +136,20 @@ def load_csv_to_db(df):
     cur.execute(f"TRUNCATE {DB_SCHEMA}.prodai")
 
     cols = ','.join([f'"{c}"' for c in df.columns])
-    placeholders = ','.join(['%s'] * len(df.columns))
 
-    for _, row in df.iterrows():
-        values = [
+    all_values = [
+        tuple(
             safe_null(strip_dot_zero(v, 'year')) if 'planting_year' in col and col.startswith('plots')
             else safe_null(strip_dot_zero(v))
             for col, v in zip(df.columns, row)
-        ]
-        cur.execute(
-            f"INSERT INTO {DB_SCHEMA}.prodai ({cols}) VALUES ({placeholders})",
-            values
         )
+        for _, row in df.iterrows()
+    ]
+    execute_values(
+        cur,
+        f"INSERT INTO {DB_SCHEMA}.prodai ({cols}) VALUES %s",
+        all_values
+    )
 
     conn.commit()
     cur.close()
@@ -160,13 +163,6 @@ def get_transformed_data():
     cols = [desc[0] for desc in cur.description]
     cur.close()
     conn.close()
-
-    # DEBUG - remove after diagnosis
-    cov_col = [i for i, c in enumerate(cols) if 'CAFSSel02Cov' in c]
-    if cov_col and rows:
-        idx = cov_col[0]
-        sample_val = rows[0][idx]
-        st.write(f"DEBUG → CAFSSel02Cov raw value: `{sample_val}` | type: `{type(sample_val)}`")
 
     df = pd.DataFrame(rows, columns=cols)
     df = df.where(pd.notnull(df), None)
