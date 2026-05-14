@@ -136,20 +136,24 @@ def load_csv_to_db(df):
     cur.execute(f"TRUNCATE {DB_SCHEMA}.prodai")
 
     cols = ','.join([f'"{c}"' for c in df.columns])
+    batch_size = 500
+    batch = []
 
-    all_values = [
-        tuple(
+    for _, row in df.iterrows():
+        batch.append(tuple(
             safe_null(strip_dot_zero(v, 'year')) if 'planting_year' in col and col.startswith('plots')
             else safe_null(strip_dot_zero(v))
             for col, v in zip(df.columns, row)
-        )
-        for _, row in df.iterrows()
-    ]
-    execute_values(
-        cur,
-        f"INSERT INTO {DB_SCHEMA}.prodai ({cols}) VALUES %s",
-        all_values
-    )
+        ))
+        if len(batch) >= batch_size:
+            execute_values(cur, f"INSERT INTO {DB_SCHEMA}.prodai ({cols}) VALUES %s", batch)
+            conn.commit()
+            batch.clear()
+
+    # Insert any remaining rows
+    if batch:
+        execute_values(cur, f"INSERT INTO {DB_SCHEMA}.prodai ({cols}) VALUES %s", batch)
+        conn.commit()
 
     conn.commit()
     cur.close()
