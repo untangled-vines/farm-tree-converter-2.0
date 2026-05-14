@@ -73,13 +73,12 @@ def normalise_format_b(df: pd.DataFrame, existing_columns: list) -> pd.DataFrame
     Rename Format B columns to match the existing prodai schema (Format A),
     then drop any column that doesn't exist in prodai — no DB changes needed.
     """
-    df = df.copy()
     rename = {k: v for k, v in FORMAT_B_COLUMN_MAP.items() if k in df.columns}
     df = df.rename(columns=rename)
-    # Normalise column names the same way load_csv_to_db will
     df.columns = [c.lower().replace(' ', '_') for c in df.columns]
-    # Keep only columns that exist in prodai
-    df = df[[c for c in df.columns if c in existing_columns]]
+    # Drop columns not in prodai immediately to free memory
+    cols_to_keep = [c for c in df.columns if c in existing_columns]
+    df = df[cols_to_keep]
     return df
 
 # ---------------------------------------------------------------------------
@@ -128,7 +127,6 @@ def load_csv_to_db(df):
     conn = get_connection()
     cur = conn.cursor()
 
-    df = df.copy()
     df.columns = [c.lower().replace(' ', '_') for c in df.columns]
     # De-duplicate columns (safety net — should not occur after normalisation)
     df = df.loc[:, ~df.columns.duplicated()]
